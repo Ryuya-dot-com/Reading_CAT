@@ -287,10 +287,9 @@ report = f"""
 - Narrative Reading Speed: {int((len(data['testResults']['reading']['texts']['narrative']['text'].split()) / ((datetime.fromisoformat(timings['narrative']['question1Start'].replace('Z', '+00:00')) - datetime.fromisoformat(timings['narrative']['textStart'].replace('Z', '+00:00'))).total_seconds() / 60)))} WPM
 - Expository Reading Speed: {int((len(data['testResults']['reading']['texts']['expository']['text'].split()) / ((datetime.fromisoformat(timings['expository']['question1Start'].replace('Z', '+00:00')) - datetime.fromisoformat(timings['expository']['textStart'].replace('Z', '+00:00'))).total_seconds() / 60)))} WPM
 
-## AI Application Suggestions
-1. **Automated Distractor Generation**: Based on phonological similarity
-2. **Answer Quality Monitoring**: Real-time response checking system
-3. **Adaptive Difficulty Tuning**: Dynamic adjustment using Neural-IRT
+## Future Stidues:
+1. **Answer Quality Monitoring**: Real-time response checking system
+2. **Adaptive Difficulty Tuning**: Dynamic adjustment using Neural-IRT
 """
 
 print(report)
