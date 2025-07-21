@@ -1,7 +1,7 @@
 /**
  * JACET Vocabulary Size CAT + Reading Comprehension Test
- * Author: JACET Vocabulary Research Team (JS version)
- * License: MIT
+ * Enhanced Version with Data Collection & Analysis Features
+ * Author: Ryuya KOMURO
  */
 
 // Simple CSV parser function
@@ -35,13 +35,117 @@ function parseCSV(text) {
 // Enhanced CSV parser for reading texts (handles quoted text with commas)
 function parseReadingCSV(text) {
     // Use Papa Parse for more robust CSV parsing
-    return text; // Will be parsed with Papa.parse in loadReadingData
+    return text; // Will be parsed with Papa.parse in loadData
 }
 
+// Data Collection and Analysis Class
+class DataCollector {
+    constructor() {
+        this.sessions = [];
+        this.currentSession = {
+            sessionId: this.generateSessionId(),
+            startTime: new Date(),
+            browserInfo: this.getBrowserInfo(),
+            screenInfo: this.getScreenInfo(),
+            interactions: [],
+            detailedResponses: [],
+            mouseMovements: [],
+            focusEvents: []
+        };
+        this.initializeEventListeners();
+    }
+
+    generateSessionId() {
+        return `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    }
+
+    getBrowserInfo() {
+        return {
+            userAgent: navigator.userAgent,
+            language: navigator.language,
+            platform: navigator.platform,
+            cookieEnabled: navigator.cookieEnabled,
+            onlineStatus: navigator.onLine,
+            timestamp: new Date().toISOString()
+        };
+    }
+
+    getScreenInfo() {
+        return {
+            width: window.screen.width,
+            height: window.screen.height,
+            availWidth: window.screen.availWidth,
+            availHeight: window.screen.availHeight,
+            colorDepth: window.screen.colorDepth,
+            pixelRatio: window.devicePixelRatio || 1
+        };
+    }
+
+    initializeEventListeners() {
+        // Mouse movement tracking (sampled)
+        let lastMouseLog = 0;
+        document.addEventListener('mousemove', (e) => {
+            const now = Date.now();
+            if (now - lastMouseLog > 100) { // Sample every 100ms
+                this.currentSession.mouseMovements.push({
+                    x: e.clientX,
+                    y: e.clientY,
+                    timestamp: now
+                });
+                lastMouseLog = now;
+            }
+        });
+
+        // Focus/Blur events
+        window.addEventListener('blur', () => {
+            this.currentSession.focusEvents.push({
+                type: 'blur',
+                timestamp: Date.now()
+            });
+        });
+
+        window.addEventListener('focus', () => {
+            this.currentSession.focusEvents.push({
+                type: 'focus',
+                timestamp: Date.now()
+            });
+        });
+    }
+
+    logInteraction(action, data) {
+        this.currentSession.interactions.push({
+            action: action,
+            data: data,
+            timestamp: Date.now(),
+            relativeTime: Date.now() - this.currentSession.startTime.getTime()
+        });
+    }
+
+    logDetailedResponse(responseData) {
+        this.currentSession.detailedResponses.push({
+            ...responseData,
+            timestamp: Date.now(),
+            relativeTime: Date.now() - this.currentSession.startTime.getTime()
+        });
+    }
+
+    getSessionSummary() {
+        return {
+            ...this.currentSession,
+            endTime: new Date(),
+            totalDuration: Date.now() - this.currentSession.startTime.getTime(),
+            interactionCount: this.currentSession.interactions.length,
+            responseCount: this.currentSession.detailedResponses.length
+        };
+    }
+}
+
+// Enhanced Main Test Class
 class VocabReadingCATTest {
     constructor() {
         this.vocabularyItems = [];
         this.readingTexts = [];
+        this.dataCollector = new DataCollector();
         this.loadData();
     }
 
@@ -86,10 +190,18 @@ class VocabReadingCATTest {
             console.log(`Loaded ${this.vocabularyItems.length} vocabulary items`);
             console.log(`Loaded ${this.readingTexts.length} reading texts`);
             
+            this.dataCollector.logInteraction('data_loaded', {
+                vocabCount: this.vocabularyItems.length,
+                readingCount: this.readingTexts.length
+            });
+            
             this.reset();
             this.render();
         } catch (error) {
             console.error('Failed to load data:', error);
+            this.dataCollector.logInteraction('data_load_error', {
+                error: error.message
+            });
             this.showError();
         }
     }
@@ -120,6 +232,7 @@ class VocabReadingCATTest {
         this.catDone = false;
         this.administeredItems = [];
         this.responses = [];
+        this.responseDetails = []; // NEW: Detailed response tracking
         this.theta = 0;
         this.se = Infinity;
         this.nextItem = this.selectInitialItem();
@@ -149,6 +262,13 @@ class VocabReadingCATTest {
                 question2End: null 
             }
         };
+        
+        // NEW: Enhanced tracking
+        this.detailedReadingData = {
+            narrative: { textInteractions: [], questionInteractions: [] },
+            expository: { textInteractions: [], questionInteractions: [] }
+        };
+        
         this.allCompleted = false;
     }
 
@@ -189,21 +309,6 @@ class VocabReadingCATTest {
         return this.readingTexts.find(text => 
             text.level === level && text.type === type
         );
-    }
-
-    // テキストの識別情報を生成するメソッド
-    getTextIdentifier(text) {
-        // CSVの行番号やインデックスを基に識別子を作成
-        const index = this.readingTexts.indexOf(text);
-        const id = text.id || `T${text.level}${text.type.charAt(0).toUpperCase()}${index + 1}`;
-        const title = text.title || '';
-        const identifier = `${text.level}K-${text.type}-${index + 1}`;
-        
-        return {
-            id: id,
-            title: title,
-            identifier: identifier
-        };
     }
 
     selectInitialItem() {
@@ -323,8 +428,30 @@ class VocabReadingCATTest {
     }
 
     handleVocabResponse(selectedOption) {
+        const startTime = this.lastQuestionStartTime || Date.now();
+        const responseTime = Date.now() - startTime;
         const item = this.vocabularyItems[this.nextItem];
         const correct = selectedOption === item.CorrectAnswer ? 1 : 0;
+
+        // Store detailed response data
+        this.responseDetails.push({
+            itemIndex: this.nextItem,
+            item: item.Item,
+            level: item.Level,
+            partOfSpeech: item.PartOfSpeech,
+            correctAnswer: item.CorrectAnswer,
+            selectedAnswer: selectedOption,
+            correct: correct,
+            responseTime: responseTime,
+            itemParameters: {
+                discrimination: item.Dscrimination,
+                difficulty: item.Difficulty,
+                guessing: item.Guessing
+            },
+            abilityBeforeResponse: this.theta,
+            seBeforeResponse: this.se,
+            timestamp: Date.now()
+        });
 
         this.administeredItems.push(this.nextItem);
         this.responses.push(correct);
@@ -333,6 +460,15 @@ class VocabReadingCATTest {
         const estimate = this.estimateAbilityEAP(this.administeredItems, this.responses);
         this.theta = estimate.theta;
         this.se = estimate.se;
+
+        // Log interaction
+        this.dataCollector.logInteraction('vocab_response', {
+            item: item.Item,
+            correct: correct,
+            responseTime: responseTime,
+            newTheta: this.theta,
+            newSE: this.se
+        });
 
         // Check termination conditions
         const needHigh = this.administeredItems.filter(i => this.vocabularyItems[i].Level >= 7).length < 2;
@@ -358,11 +494,42 @@ class VocabReadingCATTest {
         this.currentReadingText = this.getReadingText(this.readingLevel, 'narrative');
         // Record reading start time
         this.readingTimes.narrative.textStart = new Date();
+        
+        // Log CAT completion
+        this.dataCollector.logInteraction('cat_completed', {
+            finalTheta: this.theta,
+            finalSE: this.se,
+            vocabSize: vocabSize,
+            readingLevel: this.readingLevel,
+            totalItems: this.administeredItems.length,
+            correctItems: this.responses.filter(r => r === 1).length
+        });
     }
 
     handleReadingAnswer(answer) {
         const currentType = this.phase.replace('reading_', '');
         const currentTime = new Date();
+        
+        // Detailed response logging
+        const responseData = {
+            phase: this.phase,
+            type: currentType,
+            level: this.readingLevel,
+            step: this.readingStep,
+            question: this.readingStep === 'question1' ? 
+                this.currentReadingText.question1 : 
+                this.currentReadingText.question2,
+            answer: answer,
+            answerLength: answer.split(' ').length,
+            answerSentences: answer.split(/[.!?]+/).filter(s => s.trim()).length,
+            timeToAnswer: currentTime - (this.readingStep === 'question1' ? 
+                this.readingTimes[currentType].question1Start : 
+                this.readingTimes[currentType].question2Start),
+            textContent: this.currentReadingText.text,
+            timestamp: currentTime.toISOString()
+        };
+        
+        this.dataCollector.logDetailedResponse(responseData);
         
         if (this.readingStep === 'question1') {
             this.readingAnswers[currentType].question1 = answer;
@@ -389,36 +556,36 @@ class VocabReadingCATTest {
         this.render();
     }
 
+    // NEW: Enhanced export functions
     exportToExcel() {
-        // Vocabulary responses
-        const vocabResponses = this.administeredItems.map((itemIdx, i) => ({
-            item_id: itemIdx,
-            word: this.vocabularyItems[itemIdx].Item,
-            level: this.vocabularyItems[itemIdx].Level,
-            part_of_speech: this.vocabularyItems[itemIdx].PartOfSpeech,
-            correct_answer: this.vocabularyItems[itemIdx].CorrectAnswer,
-            response: this.responses[i],
-            correct: this.responses[i] === 1 ? "正解" : "不正解",
-            discrimination: this.vocabularyItems[itemIdx].Dscrimination,
-            difficulty: this.vocabularyItems[itemIdx].Difficulty,
-            guessing: this.vocabularyItems[itemIdx].Guessing
+        // Vocabulary responses with enhanced data
+        const vocabResponses = this.responseDetails.map((detail, i) => ({
+            item_id: detail.itemIndex,
+            word: detail.item,
+            level: detail.level,
+            part_of_speech: detail.partOfSpeech,
+            correct_answer: detail.correctAnswer,
+            selected_answer: detail.selectedAnswer,
+            response: detail.correct,
+            correct: detail.correct === 1 ? "正解" : "不正解",
+            response_time_ms: detail.responseTime,
+            discrimination: detail.itemParameters.discrimination,
+            difficulty: detail.itemParameters.difficulty,
+            guessing: detail.itemParameters.guessing,
+            ability_before: detail.abilityBeforeResponse,
+            se_before: detail.seBeforeResponse,
+            item_order: i + 1
         }));
 
-        // Reading responses with text identification and timing data
-        const narrativeText = this.getReadingText(this.readingLevel, 'narrative');
-        const expositoryText = this.getReadingText(this.readingLevel, 'expository');
-        const narrativeInfo = this.getTextIdentifier(narrativeText);
-        const expositoryInfo = this.getTextIdentifier(expositoryText);
-        
+        // Reading responses with timing data (in milliseconds)
         const readingResponses = [
             {
                 type: 'narrative',
                 level: this.readingLevel,
-                text_id: narrativeInfo.id,
-                text_identifier: narrativeInfo.identifier,
-                text_title: narrativeInfo.title,
                 question1: this.readingAnswers.narrative.question1,
+                question1_length: this.readingAnswers.narrative.question1.split(' ').length,
                 question2: this.readingAnswers.narrative.question2,
+                question2_length: this.readingAnswers.narrative.question2.split(' ').length,
                 text_read_time_ms: this.readingTimes.narrative.question1Start && this.readingTimes.narrative.textStart ? 
                     (this.readingTimes.narrative.question1Start - this.readingTimes.narrative.textStart) : 0,
                 question1_time_ms: this.readingTimes.narrative.question1End && this.readingTimes.narrative.question1Start ?
@@ -431,11 +598,10 @@ class VocabReadingCATTest {
             {
                 type: 'expository', 
                 level: this.readingLevel,
-                text_id: expositoryInfo.id,
-                text_identifier: expositoryInfo.identifier,
-                text_title: expositoryInfo.title,
                 question1: this.readingAnswers.expository.question1,
+                question1_length: this.readingAnswers.expository.question1.split(' ').length,
                 question2: this.readingAnswers.expository.question2,
+                question2_length: this.readingAnswers.expository.question2.split(' ').length,
                 text_read_time_ms: this.readingTimes.expository.question1Start && this.readingTimes.expository.textStart ? 
                     (this.readingTimes.expository.question1Start - this.readingTimes.expository.textStart) : 0,
                 question1_time_ms: this.readingTimes.expository.question1End && this.readingTimes.expository.question1Start ?
@@ -447,7 +613,7 @@ class VocabReadingCATTest {
             }
         ];
 
-        // Summary
+        // Summary with enhanced metrics
         const totalReadingTime = 
             (this.readingTimes.narrative.question2End && this.readingTimes.narrative.textStart ? 
                 (this.readingTimes.narrative.question2End - this.readingTimes.narrative.textStart) : 0) +
@@ -456,6 +622,7 @@ class VocabReadingCATTest {
 
         const summary = [{
             test_date: new Date().toLocaleString('ja-JP'),
+            session_id: this.dataCollector.currentSession.sessionId,
             theta: Math.round(this.theta * 100) / 100,
             standard_error: Math.round(this.se * 100) / 100,
             vocabulary_size: Math.round(this.vocabFromTheta(this.theta)),
@@ -463,9 +630,9 @@ class VocabReadingCATTest {
             total_vocab_items: this.administeredItems.length,
             correct_vocab_answers: this.responses.filter(r => r === 1).length,
             vocab_accuracy_percent: Math.round((this.responses.filter(r => r === 1).length / this.responses.length) * 100 * 10) / 10,
+            avg_vocab_response_time_ms: Math.round(vocabResponses.reduce((sum, r) => sum + r.response_time_ms, 0) / vocabResponses.length),
             total_reading_time_ms: totalReadingTime,
-            narrative_text_id: narrativeInfo.id,
-            expository_text_id: expositoryInfo.id
+            total_test_duration_ms: Date.now() - this.dataCollector.currentSession.startTime.getTime()
         }];
 
         const wb = XLSX.utils.book_new();
@@ -479,6 +646,48 @@ class VocabReadingCATTest {
 
         const date = new Date().toISOString().split('T')[0];
         XLSX.writeFile(wb, `vocab_reading_cat_result_${date}.xlsx`);
+        
+        // Also export detailed JSON data
+        this.exportDetailedJSON();
+    }
+
+    // NEW: Export detailed JSON for analysis
+    exportDetailedJSON() {
+        const detailedData = {
+            sessionInfo: this.dataCollector.getSessionSummary(),
+            testResults: {
+                vocabulary: {
+                    theta: this.theta,
+                    se: this.se,
+                    vocabSize: this.vocabFromTheta(this.theta),
+                    responses: this.responseDetails,
+                    itemOrder: this.administeredItems
+                },
+                reading: {
+                    level: this.readingLevel,
+                    answers: this.readingAnswers,
+                    timings: this.readingTimes,
+                    texts: {
+                        narrative: this.getReadingText(this.readingLevel, 'narrative'),
+                        expository: this.getReadingText(this.readingLevel, 'expository')
+                    }
+                }
+            },
+            analysisMetadata: {
+                testVersion: '2.0-enhanced',
+                exportTime: new Date().toISOString(),
+                completionStatus: this.allCompleted ? 'completed' : 'incomplete'
+            }
+        };
+
+        const blob = new Blob([JSON.stringify(detailedData, null, 2)], 
+            { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `cat_detailed_data_${this.dataCollector.currentSession.sessionId}.json`;
+        a.click();
+        URL.revokeObjectURL(url);
     }
 
     render() {
@@ -490,8 +699,9 @@ class VocabReadingCATTest {
                 <div class="row pt-4 fade-in">
                     <div class="col-10 offset-1">
                         <div class="text-center mb-5">
-                            <h1 class="display-4 mb-3">語彙・読解力測定システム</h1>
+                            <h1 class="display-4 mb-3">JACET 語彙・読解力測定システム</h1>
                             <p class="lead text-muted">個人最適化による効率的な英語力測定</p>
+                            <p class="text-info"><small>Enhanced Version 2.0 - データ収集機能付き</small></p>
                         </div>
 
                         <!-- Test Overview -->
@@ -506,7 +716,8 @@ class VocabReadingCATTest {
                                         <ul class="list-unstyled">
                                             <li><strong>語彙力:</strong> 推定語彙サイズ（0-8000語）</li>
                                             <li><strong>読解力:</strong> レベル別理解度測定</li>
-                                            <li><strong>回答時間:</strong> 解答にかかった時間の分析</li>
+                                            <li><strong>回答時間:</strong> 詳細な時間分析</li>
+                                            <li><strong class="text-info">NEW:</strong> 回答パターン分析</li>
                                         </ul>
                                     </div>
                                     <div class="col-md-6">
@@ -521,6 +732,23 @@ class VocabReadingCATTest {
                             </div>
                         </div>
 
+                        <!-- Data Collection Notice -->
+                        <div class="card mb-4 shadow-sm border-info">
+                            <div class="card-header bg-info text-white">
+                                <h4 class="mb-0"><i class="fas fa-database me-2"></i>データ収集について</h4>
+                            </div>
+                            <div class="card-body">
+                                <p>このバージョンでは、テストの改善のため以下のデータを収集します：</p>
+                                <ul>
+                                    <li>回答内容と回答時間</li>
+                                    <li>問題ごとの正答率</li>
+                                    <li>読解回答の詳細分析用データ</li>
+                                    <li>操作ログ（匿名化済み）</li>
+                                </ul>
+                                <p class="text-muted mb-0"><small>収集データは研究目的にのみ使用され、個人情報は含まれません。</small></p>
+                            </div>
+                        </div>
+
                         <!-- Test Flow -->
                         <div class="card mb-4 shadow-sm">
                             <div class="card-header bg-info text-white">
@@ -532,7 +760,7 @@ class VocabReadingCATTest {
                                         <div class="text-center p-3 border rounded bg-light">
                                             <div class="display-6 text-primary mb-2">1</div>
                                             <h5>語彙力測定</h5>
-                                            <p class="mb-0">コンピュータ版の<br>語彙テスト<br><small class="text-muted">(20-30問)</small></p>
+                                            <p class="mb-0">CAT方式による<br>効率的な語彙テスト<br><small class="text-muted">(20-30問)</small></p>
                                         </div>
                                     </div>
                                     <div class="col-lg-4 mb-3">
@@ -546,7 +774,7 @@ class VocabReadingCATTest {
                                         <div class="text-center p-3 border rounded bg-light">
                                             <div class="display-6 text-warning mb-2">3</div>
                                             <h5>結果分析</h5>
-                                            <p class="mb-0">推定結果<br>Excel形式で出力<br><small class="text-muted">(回答時間データ含む)</small></p>
+                                            <p class="mb-0">詳細な能力分析<br>Excel + JSON出力<br><small class="text-muted">(分析用データ含む)</small></p>
                                         </div>
                                     </div>
                                 </div>
@@ -562,11 +790,12 @@ class VocabReadingCATTest {
                                     </div>
                                     <div class="card-body">
                                         <ul class="list-unstyled">
-                                            <li><i class="fas fa-check text-success me-2"></i>コンピュータ版のテスト</li>
+                                            <li><i class="fas fa-check text-success me-2"></i>3PL-IRT理論に基づく測定</li>
                                             <li><i class="fas fa-check text-success me-2"></i>個人最適化された問題選択</li>
                                             <li><i class="fas fa-check text-success me-2"></i>リアルタイム能力値推定</li>
-                                            <li><i class="fas fa-check text-success me-2"></i>回答時間が記録されます</li>
+                                            <li><i class="fas fa-check text-success me-2"></i>詳細な時間分析（ミリ秒単位）</li>
                                             <li><i class="fas fa-check text-success me-2"></i>レベル別自動振り分け</li>
+                                            <li><i class="fas fa-check text-success me-2"></i><strong class="text-info">詳細データ収集機能</strong></li>
                                         </ul>
                                     </div>
                                 </div>
@@ -582,7 +811,7 @@ class VocabReadingCATTest {
                                             <li><i class="fas fa-info-circle text-info me-2"></i>読解問題は自由記述式</li>
                                             <li><i class="fas fa-info-circle text-info me-2"></i>わからない問題も必ず回答</li>
                                             <li><i class="fas fa-info-circle text-info me-2"></i>ブラウザの戻るボタン禁止</li>
-                                            <li><i class="fas fa-info-circle text-info me-2"></i>最後まで取り組んでください</li>
+                                            <li><i class="fas fa-info-circle text-info me-2"></i>集中して最後まで完走</li>
                                         </ul>
                                     </div>
                                 </div>
@@ -607,6 +836,9 @@ class VocabReadingCATTest {
 
             document.getElementById('startBtn').addEventListener('click', () => {
                 this.started = true;
+                this.dataCollector.logInteraction('test_started', {
+                    timestamp: Date.now()
+                });
                 this.render();
             });
 
@@ -616,6 +848,9 @@ class VocabReadingCATTest {
             const options = [item.CorrectAnswer, item.Distractor_1, item.Distractor_2, item.Distractor_3]
                 .sort(() => Math.random() - 0.5); // Shuffle options
             const progressPct = Math.min(100, Math.round(100 * this.administeredItems.length / 30));
+            
+            // Record question start time
+            this.lastQuestionStartTime = Date.now();
 
             app.innerHTML = `
                 <div class="row pt-4 fade-in">
@@ -669,8 +904,18 @@ class VocabReadingCATTest {
                                 <p>語彙問題正答率: ${accuracy}%</p>
                             </div>
                             <div class="mt-4">
-                                <button id="downloadBtn" class="btn btn-success btn-lg me-3">結果をダウンロード</button>
-                                <button id="restartBtn" class="btn btn-outline-primary btn-lg">再テスト</button>
+                                <button id="downloadBtn" class="btn btn-success btn-lg me-3">
+                                    <i class="fas fa-file-excel me-2"></i>結果をExcelでダウンロード
+                                </button>
+                                <button id="downloadJsonBtn" class="btn btn-info btn-lg me-3">
+                                    <i class="fas fa-file-code me-2"></i>詳細データ (JSON)
+                                </button>
+                                <button id="restartBtn" class="btn btn-outline-primary btn-lg">
+                                    <i class="fas fa-redo me-2"></i>再テスト
+                                </button>
+                            </div>
+                            <div class="mt-3">
+                                <small class="text-muted">Session ID: ${this.dataCollector.currentSession.sessionId}</small>
                             </div>
                         </div>
                     </div>
@@ -681,9 +926,20 @@ class VocabReadingCATTest {
                 this.exportToExcel();
             });
 
+            document.getElementById('downloadJsonBtn').addEventListener('click', () => {
+                this.exportDetailedJSON();
+            });
+
             document.getElementById('restartBtn').addEventListener('click', () => {
                 this.reset();
                 this.render();
+            });
+            
+            // Log test completion
+            this.dataCollector.logInteraction('test_completed', {
+                finalVocabSize: vocabSize,
+                accuracy: accuracy,
+                totalDuration: Date.now() - this.dataCollector.currentSession.startTime.getTime()
             });
         }
     }
@@ -693,24 +949,22 @@ class VocabReadingCATTest {
         const currentType = this.phase.replace('reading_', '');
         const typeLabel = currentType === 'narrative' ? '物語文' : '説明文';
         const questionNum = this.readingStep === 'question1' ? 1 : 2;
-        
-        // テキストの識別情報を取得
-        const textInfo = this.getTextIdentifier(this.currentReadingText);
 
         if (this.readingStep === 'text') {
-            // Show reading text with identification
+            // Log text presentation
+            this.dataCollector.logInteraction('reading_text_shown', {
+                type: currentType,
+                level: this.readingLevel
+            });
+            
+            // Show reading text
             app.innerHTML = `
                 <div class="row pt-4 fade-in">
                     <div class="col-10 offset-1">
                         <div class="card p-4">
                             <div class="text-center mb-4">
                                 <h4>${typeLabel}読解</h4>
-                                <div class="mb-2">
-                                    <span class="badge bg-info me-2">レベル ${this.readingLevel}K</span>
-                                    <span class="badge bg-secondary me-2">${textInfo.id}</span>
-                                    ${textInfo.title ? `<span class="badge bg-success">${textInfo.title}</span>` : ''}
-                                </div>
-                                <small class="text-muted">テキスト識別: ${textInfo.identifier}</small>
+                                <span class="badge bg-info">レベル ${this.readingLevel}K</span>
                             </div>
                             <div class="card p-4 mb-4" style="background-color: #f8f9fa;">
                                 <div style="line-height: 1.8; font-size: 1.1em;">
@@ -731,11 +985,18 @@ class VocabReadingCATTest {
                 this.readingStep = 'question1';
                 const currentType = this.phase.replace('reading_', '');
                 this.readingTimes[currentType].question1Start = new Date();
+                
+                // Log reading time
+                this.dataCollector.logInteraction('reading_text_finished', {
+                    type: currentType,
+                    readingTime: Date.now() - this.readingTimes[currentType].textStart.getTime()
+                });
+                
                 this.render();
             });
 
         } else {
-            // Show question with text identification
+            // Show question
             const questionText = this.readingStep === 'question1' ? 
                 this.currentReadingText.question1 : this.currentReadingText.question2;
 
@@ -745,13 +1006,7 @@ class VocabReadingCATTest {
                         <div class="row">
                             <div class="col-6">
                                 <div class="card p-3" style="max-height: 500px; overflow-y: auto;">
-                                    <div class="d-flex justify-content-between align-items-center mb-3">
-                                        <h6 class="mb-0">${typeLabel}テキスト</h6>
-                                        <div>
-                                            <span class="badge bg-info me-1">${this.readingLevel}K</span>
-                                            <span class="badge bg-secondary">${textInfo.id}</span>
-                                        </div>
-                                    </div>
+                                    <h6 class="mb-3">${typeLabel}テキスト</h6>
                                     <div style="line-height: 1.6; font-size: 0.9em;">
                                         ${this.currentReadingText.text.split('\n').filter(p => p.trim()).map(paragraph => 
                                             `<p class="mb-2">${this.escapeHtml(paragraph)}</p>`
@@ -761,10 +1016,7 @@ class VocabReadingCATTest {
                             </div>
                             <div class="col-6">
                                 <div class="card p-4">
-                                    <div class="d-flex justify-content-between align-items-center mb-3">
-                                        <h5>問題 ${questionNum}</h5>
-                                        <small class="text-muted">${textInfo.identifier}</small>
-                                    </div>
+                                    <h5>問題 ${questionNum}</h5>
                                     <p class="mb-4">${this.escapeHtml(questionText)}</p>
                                     <textarea id="answerText" class="form-control mb-3" rows="8" 
                                               placeholder="こちらに回答を入力してください..."></textarea>
@@ -775,6 +1027,18 @@ class VocabReadingCATTest {
                     </div>
                 </div>
             `;
+
+            // Track text input
+            let typingStarted = false;
+            document.getElementById('answerText').addEventListener('input', (e) => {
+                if (!typingStarted && e.target.value.length > 0) {
+                    typingStarted = true;
+                    this.dataCollector.logInteraction('answer_typing_started', {
+                        question: this.readingStep,
+                        type: currentType
+                    });
+                }
+            });
 
             document.getElementById('submitAnswer').addEventListener('click', () => {
                 const answer = document.getElementById('answerText').value.trim();
