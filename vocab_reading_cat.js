@@ -1,7 +1,5 @@
 /**
  * JACET Vocabulary Size CAT + Reading Comprehension Test
- * Enhanced Version with Data Collection & Analysis Features
- * Author: Ryuya KOMURO
  */
 
 // Simple CSV parser function
@@ -50,7 +48,8 @@ class DataCollector {
             interactions: [],
             detailedResponses: [],
             mouseMovements: [],
-            focusEvents: []
+            focusEvents: [],
+            checkpoints: [] // NEW: For partial save points
         };
         this.initializeEventListeners();
     }
@@ -110,6 +109,14 @@ class DataCollector {
                 timestamp: Date.now()
             });
         });
+
+        // Page unload warning
+        window.addEventListener('beforeunload', (e) => {
+            if (this.currentSession.interactions.length > 0) {
+                e.preventDefault();
+                e.returnValue = 'テストが進行中です。このページを離れると、データが失われる可能性があります。';
+            }
+        });
     }
 
     logInteraction(action, data) {
@@ -127,6 +134,35 @@ class DataCollector {
             timestamp: Date.now(),
             relativeTime: Date.now() - this.currentSession.startTime.getTime()
         });
+    }
+
+    // NEW: Save checkpoint for partial data
+    saveCheckpoint(checkpointName, testData) {
+        const checkpoint = {
+            name: checkpointName,
+            timestamp: new Date().toISOString(),
+            sessionData: this.getSessionSummary(),
+            testData: testData
+        };
+        this.currentSession.checkpoints.push(checkpoint);
+        
+        // Optionally export checkpoint data
+        if (checkpointName === 'vocabulary_completed' || 
+            checkpointName === 'narrative_completed' || 
+            checkpointName === 'expository_completed') {
+            this.exportCheckpointData(checkpoint);
+        }
+    }
+
+    exportCheckpointData(checkpoint) {
+        const blob = new Blob([JSON.stringify(checkpoint, null, 2)], 
+            { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `checkpoint_${checkpoint.name}_${this.currentSession.sessionId}.json`;
+        // Silent save - don't click automatically, just prepare the link
+        setTimeout(() => URL.revokeObjectURL(url), 100);
     }
 
     getSessionSummary() {
@@ -149,22 +185,35 @@ class VocabReadingCATTest {
         this.loadData();
     }
 
+    async loadDataWithRetry(url, maxRetries = 3) {
+        let lastError;
+        for (let i = 0; i < maxRetries; i++) {
+            try {
+                const response = await fetch(url);
+                if (!response.ok) {
+                    throw new Error(`Failed to load data: ${response.status}`);
+                }
+                return await response.text();
+            } catch (error) {
+                lastError = error;
+                console.warn(`Attempt ${i + 1} failed for ${url}:`, error);
+                if (i < maxRetries - 1) {
+                    // Wait before retry (exponential backoff)
+                    await new Promise(resolve => setTimeout(resolve, Math.pow(2, i) * 1000));
+                }
+            }
+        }
+        throw lastError;
+    }
+
     async loadData() {
         try {
-            // Load vocabulary data
-            const vocabResponse = await fetch('./jacet_parameters.csv');
-            if (!vocabResponse.ok) {
-                throw new Error(`Failed to load vocabulary data: ${vocabResponse.status}`);
-            }
-            const vocabText = await vocabResponse.text();
+            // Load vocabulary data with retry
+            const vocabText = await this.loadDataWithRetry('./jacet_parameters.csv');
             this.vocabularyItems = parseCSV(vocabText);
 
-            // Load reading texts data
-            const readingResponse = await fetch('./reading_texts.csv');
-            if (!readingResponse.ok) {
-                throw new Error(`Failed to load reading data: ${readingResponse.status}`);
-            }
-            const readingText = await readingResponse.text();
+            // Load reading texts data with retry
+            const readingText = await this.loadDataWithRetry('./reading_texts.csv');
             
             // Use Papa Parse for robust parsing of reading texts
             if (typeof Papa !== 'undefined') {
@@ -202,20 +251,22 @@ class VocabReadingCATTest {
             this.dataCollector.logInteraction('data_load_error', {
                 error: error.message
             });
-            this.showError();
+            this.showError(error);
         }
     }
 
-    showError() {
+    showError(error = null) {
         const app = document.getElementById('app');
         app.innerHTML = `
             <div class="error fade-in">
                 <h3>データの読み込みに失敗しました</h3>
+                ${error ? `<p class="text-danger">エラー: ${error.message}</p>` : ''}
                 <p>以下の点を確認してください：</p>
                 <ul class="text-start" style="max-width: 600px; margin: 0 auto;">
                     <li>jacet_parameters.csv と reading_texts.csv ファイルが同じディレクトリにあること</li>
                     <li>ローカルサーバーを使用していること（file:// プロトコルでは動作しません）</li>
                     <li>サーバー例: <code>python -m http.server 8000</code> または <code>npx serve .</code></li>
+                    <li>ネットワーク接続が安定していること</li>
                 </ul>
                 <button id="retryBtn" class="btn btn-primary mt-3">再試行</button>
             </div>
@@ -232,7 +283,7 @@ class VocabReadingCATTest {
         this.catDone = false;
         this.administeredItems = [];
         this.responses = [];
-        this.responseDetails = []; // NEW: Detailed response tracking
+        this.responseDetails = []; // Detailed response tracking
         this.theta = 0;
         this.se = Infinity;
         this.nextItem = this.selectInitialItem();
@@ -263,7 +314,7 @@ class VocabReadingCATTest {
             }
         };
         
-        // NEW: Enhanced tracking
+        // Enhanced tracking
         this.detailedReadingData = {
             narrative: { textInteractions: [], questionInteractions: [] },
             expository: { textInteractions: [], questionInteractions: [] }
@@ -504,6 +555,15 @@ class VocabReadingCATTest {
             totalItems: this.administeredItems.length,
             correctItems: this.responses.filter(r => r === 1).length
         });
+
+        // Save checkpoint for vocabulary completion
+        this.dataCollector.saveCheckpoint('vocabulary_completed', {
+            theta: this.theta,
+            se: this.se,
+            vocabSize: vocabSize,
+            responses: this.responseDetails,
+            administeredItems: this.administeredItems
+        });
     }
 
     handleReadingAnswer(answer) {
@@ -541,12 +601,26 @@ class VocabReadingCATTest {
             this.readingTimes[currentType].question2End = currentTime;
             
             if (this.phase === 'reading_narrative') {
+                // Save checkpoint for narrative completion
+                this.dataCollector.saveCheckpoint('narrative_completed', {
+                    readingLevel: this.readingLevel,
+                    narrativeAnswers: this.readingAnswers.narrative,
+                    narrativeTimes: this.readingTimes.narrative
+                });
+                
                 // Move to expository
                 this.phase = 'reading_expository';
                 this.readingStep = 'text';
                 this.currentReadingText = this.getReadingText(this.readingLevel, 'expository');
                 this.readingTimes.expository.textStart = currentTime;
             } else {
+                // Save checkpoint for expository completion
+                this.dataCollector.saveCheckpoint('expository_completed', {
+                    readingLevel: this.readingLevel,
+                    allAnswers: this.readingAnswers,
+                    allTimes: this.readingTimes
+                });
+                
                 // All completed
                 this.phase = 'final';
                 this.allCompleted = true;
@@ -556,102 +630,114 @@ class VocabReadingCATTest {
         this.render();
     }
 
-    // NEW: Enhanced export functions
+    // Enhanced export functions
     exportToExcel() {
-        // Vocabulary responses with enhanced data
-        const vocabResponses = this.responseDetails.map((detail, i) => ({
-            item_id: detail.itemIndex,
-            word: detail.item,
-            level: detail.level,
-            part_of_speech: detail.partOfSpeech,
-            correct_answer: detail.correctAnswer,
-            selected_answer: detail.selectedAnswer,
-            response: detail.correct,
-            correct: detail.correct === 1 ? "正解" : "不正解",
-            response_time_ms: detail.responseTime,
-            discrimination: detail.itemParameters.discrimination,
-            difficulty: detail.itemParameters.difficulty,
-            guessing: detail.itemParameters.guessing,
-            ability_before: detail.abilityBeforeResponse,
-            se_before: detail.seBeforeResponse,
-            item_order: i + 1
-        }));
-
-        // Reading responses with timing data (in milliseconds)
-        const readingResponses = [
-            {
-                type: 'narrative',
-                level: this.readingLevel,
-                question1: this.readingAnswers.narrative.question1,
-                question1_length: this.readingAnswers.narrative.question1.split(' ').length,
-                question2: this.readingAnswers.narrative.question2,
-                question2_length: this.readingAnswers.narrative.question2.split(' ').length,
-                text_read_time_ms: this.readingTimes.narrative.question1Start && this.readingTimes.narrative.textStart ? 
-                    (this.readingTimes.narrative.question1Start - this.readingTimes.narrative.textStart) : 0,
-                question1_time_ms: this.readingTimes.narrative.question1End && this.readingTimes.narrative.question1Start ?
-                    (this.readingTimes.narrative.question1End - this.readingTimes.narrative.question1Start) : 0,
-                question2_time_ms: this.readingTimes.narrative.question2End && this.readingTimes.narrative.question2Start ?
-                    (this.readingTimes.narrative.question2End - this.readingTimes.narrative.question2Start) : 0,
-                total_time_ms: this.readingTimes.narrative.question2End && this.readingTimes.narrative.textStart ?
-                    (this.readingTimes.narrative.question2End - this.readingTimes.narrative.textStart) : 0
-            },
-            {
-                type: 'expository', 
-                level: this.readingLevel,
-                question1: this.readingAnswers.expository.question1,
-                question1_length: this.readingAnswers.expository.question1.split(' ').length,
-                question2: this.readingAnswers.expository.question2,
-                question2_length: this.readingAnswers.expository.question2.split(' ').length,
-                text_read_time_ms: this.readingTimes.expository.question1Start && this.readingTimes.expository.textStart ? 
-                    (this.readingTimes.expository.question1Start - this.readingTimes.expository.textStart) : 0,
-                question1_time_ms: this.readingTimes.expository.question1End && this.readingTimes.expository.question1Start ?
-                    (this.readingTimes.expository.question1End - this.readingTimes.expository.question1Start) : 0,
-                question2_time_ms: this.readingTimes.expository.question2End && this.readingTimes.expository.question2Start ?
-                    (this.readingTimes.expository.question2End - this.readingTimes.expository.question2Start) : 0,
-                total_time_ms: this.readingTimes.expository.question2End && this.readingTimes.expository.textStart ?
-                    (this.readingTimes.expository.question2End - this.readingTimes.expository.textStart) : 0
+        try {
+            // Check if XLSX library is loaded
+            if (typeof XLSX === 'undefined') {
+                alert('Excelライブラリが読み込まれていません。ページを再読み込みしてください。');
+                console.error('XLSX library not loaded');
+                return;
             }
-        ];
 
-        // Summary with enhanced metrics
-        const totalReadingTime = 
-            (this.readingTimes.narrative.question2End && this.readingTimes.narrative.textStart ? 
-                (this.readingTimes.narrative.question2End - this.readingTimes.narrative.textStart) : 0) +
-            (this.readingTimes.expository.question2End && this.readingTimes.expository.textStart ? 
-                (this.readingTimes.expository.question2End - this.readingTimes.expository.textStart) : 0);
+            // Vocabulary responses with enhanced data
+            const vocabResponses = this.responseDetails.map((detail, i) => ({
+                item_id: detail.itemIndex,
+                word: detail.item,
+                level: detail.level,
+                part_of_speech: detail.partOfSpeech,
+                correct_answer: detail.correctAnswer,
+                selected_answer: detail.selectedAnswer,
+                response: detail.correct,
+                correct: detail.correct === 1 ? "正解" : "不正解",
+                response_time_ms: detail.responseTime,
+                discrimination: detail.itemParameters.discrimination,
+                difficulty: detail.itemParameters.difficulty,
+                guessing: detail.itemParameters.guessing,
+                ability_before: detail.abilityBeforeResponse,
+                se_before: detail.seBeforeResponse,
+                item_order: i + 1
+            }));
 
-        const summary = [{
-            test_date: new Date().toLocaleString('ja-JP'),
-            session_id: this.dataCollector.currentSession.sessionId,
-            theta: Math.round(this.theta * 100) / 100,
-            standard_error: Math.round(this.se * 100) / 100,
-            vocabulary_size: Math.round(this.vocabFromTheta(this.theta)),
-            reading_level: this.readingLevel,
-            total_vocab_items: this.administeredItems.length,
-            correct_vocab_answers: this.responses.filter(r => r === 1).length,
-            vocab_accuracy_percent: Math.round((this.responses.filter(r => r === 1).length / this.responses.length) * 100 * 10) / 10,
-            avg_vocab_response_time_ms: Math.round(vocabResponses.reduce((sum, r) => sum + r.response_time_ms, 0) / vocabResponses.length),
-            total_reading_time_ms: totalReadingTime,
-            total_test_duration_ms: Date.now() - this.dataCollector.currentSession.startTime.getTime()
-        }];
+            // Reading responses with timing data (in milliseconds)
+            const readingResponses = [
+                {
+                    type: 'narrative',
+                    level: this.readingLevel,
+                    question1: this.readingAnswers.narrative.question1,
+                    question1_length: this.readingAnswers.narrative.question1.split(' ').length,
+                    question2: this.readingAnswers.narrative.question2,
+                    question2_length: this.readingAnswers.narrative.question2.split(' ').length,
+                    text_read_time_ms: this.readingTimes.narrative.question1Start && this.readingTimes.narrative.textStart ? 
+                        (this.readingTimes.narrative.question1Start - this.readingTimes.narrative.textStart) : 0,
+                    question1_time_ms: this.readingTimes.narrative.question1End && this.readingTimes.narrative.question1Start ?
+                        (this.readingTimes.narrative.question1End - this.readingTimes.narrative.question1Start) : 0,
+                    question2_time_ms: this.readingTimes.narrative.question2End && this.readingTimes.narrative.question2Start ?
+                        (this.readingTimes.narrative.question2End - this.readingTimes.narrative.question2Start) : 0,
+                    total_time_ms: this.readingTimes.narrative.question2End && this.readingTimes.narrative.textStart ?
+                        (this.readingTimes.narrative.question2End - this.readingTimes.narrative.textStart) : 0
+                },
+                {
+                    type: 'expository', 
+                    level: this.readingLevel,
+                    question1: this.readingAnswers.expository.question1,
+                    question1_length: this.readingAnswers.expository.question1.split(' ').length,
+                    question2: this.readingAnswers.expository.question2,
+                    question2_length: this.readingAnswers.expository.question2.split(' ').length,
+                    text_read_time_ms: this.readingTimes.expository.question1Start && this.readingTimes.expository.textStart ? 
+                        (this.readingTimes.expository.question1Start - this.readingTimes.expository.textStart) : 0,
+                    question1_time_ms: this.readingTimes.expository.question1End && this.readingTimes.expository.question1Start ?
+                        (this.readingTimes.expository.question1End - this.readingTimes.expository.question1Start) : 0,
+                    question2_time_ms: this.readingTimes.expository.question2End && this.readingTimes.expository.question2Start ?
+                        (this.readingTimes.expository.question2End - this.readingTimes.expository.question2Start) : 0,
+                    total_time_ms: this.readingTimes.expository.question2End && this.readingTimes.expository.textStart ?
+                        (this.readingTimes.expository.question2End - this.readingTimes.expository.textStart) : 0
+                }
+            ];
 
-        const wb = XLSX.utils.book_new();
-        const wsSummary = XLSX.utils.json_to_sheet(summary);
-        const wsVocab = XLSX.utils.json_to_sheet(vocabResponses);
-        const wsReading = XLSX.utils.json_to_sheet(readingResponses);
+            // Summary with enhanced metrics
+            const totalReadingTime = 
+                (this.readingTimes.narrative.question2End && this.readingTimes.narrative.textStart ? 
+                    (this.readingTimes.narrative.question2End - this.readingTimes.narrative.textStart) : 0) +
+                (this.readingTimes.expository.question2End && this.readingTimes.expository.textStart ? 
+                    (this.readingTimes.expository.question2End - this.readingTimes.expository.textStart) : 0);
 
-        XLSX.utils.book_append_sheet(wb, wsSummary, "Summary");
-        XLSX.utils.book_append_sheet(wb, wsVocab, "Vocabulary_Responses");
-        XLSX.utils.book_append_sheet(wb, wsReading, "Reading_Responses");
+            const summary = [{
+                test_date: new Date().toLocaleString('ja-JP'),
+                session_id: this.dataCollector.currentSession.sessionId,
+                theta: Math.round(this.theta * 100) / 100,
+                standard_error: Math.round(this.se * 100) / 100,
+                vocabulary_size: Math.round(this.vocabFromTheta(this.theta)),
+                reading_level: this.readingLevel,
+                total_vocab_items: this.administeredItems.length,
+                correct_vocab_answers: this.responses.filter(r => r === 1).length,
+                vocab_accuracy_percent: Math.round((this.responses.filter(r => r === 1).length / this.responses.length) * 100 * 10) / 10,
+                avg_vocab_response_time_ms: Math.round(vocabResponses.reduce((sum, r) => sum + r.response_time_ms, 0) / vocabResponses.length),
+                total_reading_time_ms: totalReadingTime,
+                total_test_duration_ms: Date.now() - this.dataCollector.currentSession.startTime.getTime()
+            }];
 
-        const date = new Date().toISOString().split('T')[0];
-        XLSX.writeFile(wb, `vocab_reading_cat_result_${date}.xlsx`);
-        
-        // Also export detailed JSON data
-        this.exportDetailedJSON();
+            const wb = XLSX.utils.book_new();
+            const wsSummary = XLSX.utils.json_to_sheet(summary);
+            const wsVocab = XLSX.utils.json_to_sheet(vocabResponses);
+            const wsReading = XLSX.utils.json_to_sheet(readingResponses);
+
+            XLSX.utils.book_append_sheet(wb, wsSummary, "Summary");
+            XLSX.utils.book_append_sheet(wb, wsVocab, "Vocabulary_Responses");
+            XLSX.utils.book_append_sheet(wb, wsReading, "Reading_Responses");
+
+            const date = new Date().toISOString().split('T')[0];
+            XLSX.writeFile(wb, `vocab_reading_cat_result_${date}.xlsx`);
+            
+            console.log('Excel file exported successfully');
+            
+        } catch (error) {
+            console.error('Error exporting Excel:', error);
+            alert('Excelファイルの作成中にエラーが発生しました。コンソールを確認してください。');
+        }
     }
 
-    // NEW: Export detailed JSON for analysis
+    // Export detailed JSON for analysis
     exportDetailedJSON() {
         const detailedData = {
             sessionInfo: this.dataCollector.getSessionSummary(),
@@ -676,7 +762,8 @@ class VocabReadingCATTest {
             analysisMetadata: {
                 testVersion: '2.0-enhanced',
                 exportTime: new Date().toISOString(),
-                completionStatus: this.allCompleted ? 'completed' : 'incomplete'
+                completionStatus: this.allCompleted ? 'completed' : 'incomplete',
+                checkpoints: this.dataCollector.currentSession.checkpoints
             }
         };
 
@@ -699,9 +786,8 @@ class VocabReadingCATTest {
                 <div class="row pt-4 fade-in">
                     <div class="col-10 offset-1">
                         <div class="text-center mb-5">
-                            <h1 class="display-4 mb-3">JACET 語彙・読解力測定システム</h1>
-                            <p class="lead text-muted">個人最適化による効率的な英語力測定</p>
-                            <p class="text-info"><small>Enhanced Version 2.0 - データ収集機能付き</small></p>
+                            <h1 class="display-4 mb-3">語彙・読解力測定システム</h1>
+                            <p class="lead text-muted">個人最適化による英語力測定</p>
                         </div>
 
                         <!-- Test Overview -->
@@ -716,7 +802,6 @@ class VocabReadingCATTest {
                                         <ul class="list-unstyled">
                                             <li><strong>語彙力:</strong> 推定語彙サイズ（0-8000語）</li>
                                             <li><strong>読解力:</strong> レベル別理解度測定</li>
-                                            <li><strong>回答時間:</strong> 詳細な時間分析</li>
                                             <li><strong class="text-info">NEW:</strong> 回答パターン分析</li>
                                         </ul>
                                     </div>
@@ -796,6 +881,7 @@ class VocabReadingCATTest {
                                             <li><i class="fas fa-check text-success me-2"></i>詳細な時間分析（ミリ秒単位）</li>
                                             <li><i class="fas fa-check text-success me-2"></i>レベル別自動振り分け</li>
                                             <li><i class="fas fa-check text-success me-2"></i><strong class="text-info">詳細データ収集機能</strong></li>
+                                            <li><i class="fas fa-check text-success me-2"></i><strong class="text-info">中断時の自動チェックポイント保存</strong></li>
                                         </ul>
                                     </div>
                                 </div>
@@ -810,8 +896,9 @@ class VocabReadingCATTest {
                                             <li><i class="fas fa-info-circle text-info me-2"></i>語彙問題は4択選択式</li>
                                             <li><i class="fas fa-info-circle text-info me-2"></i>読解問題は自由記述式</li>
                                             <li><i class="fas fa-info-circle text-info me-2"></i>わからない問題も必ず回答</li>
-                                            <li><i class="fas fa-info-circle text-info me-2"></i>ブラウザの戻るボタン禁止</li>
-                                            <li><i class="fas fa-info-circle text-info me-2"></i>集中して最後まで完走</li>
+                                            <li><i class="fas fa-info-circle text-warning me-2"></i><strong>回答後の修正・戻る機能はありません</strong></li>
+                                            <li><i class="fas fa-info-circle text-danger me-2"></i><strong>ブラウザの戻るボタンは使用禁止</strong></li>
+                                            <li><i class="fas fa-info-circle text-info me-2"></i>集中して最後まで取り組んでください</li>
                                         </ul>
                                     </div>
                                 </div>
@@ -824,6 +911,7 @@ class VocabReadingCATTest {
                                 <div class="card-body p-4">
                                     <h4 class="mb-3">測定開始の準備はよろしいですか？</h4>
                                     <p class="text-muted mb-4">データ読み込み完了: 語彙項目 ${this.vocabularyItems.length}問 | 読解テキスト ${this.readingTexts.length}種類</p>
+                                    <p class="text-danger mb-4"><strong>注意: 一度回答した問題には戻れません</strong></p>
                                     <button id="startBtn" class="btn btn-primary btn-lg px-5 py-3">
                                         <i class="fas fa-play me-2"></i>テスト開始
                                     </button>
@@ -931,8 +1019,9 @@ class VocabReadingCATTest {
             });
 
             document.getElementById('restartBtn').addEventListener('click', () => {
-                this.reset();
-                this.render();
+                if (confirm('新しいテストを開始しますか？現在のデータは保存されています。')) {
+                    location.reload();
+                }
             });
             
             // Log test completion
