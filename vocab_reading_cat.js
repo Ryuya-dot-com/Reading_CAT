@@ -138,37 +138,84 @@ class DataCollector {
 
     // NEW: Save checkpoint for partial data
     saveCheckpoint(checkpointName, testData) {
-        const checkpoint = {
-            name: checkpointName,
-            timestamp: new Date().toISOString(),
-            sessionData: this.getSessionSummary(),
-            testData: testData
-        };
-        this.currentSession.checkpoints.push(checkpoint);
-        
-        // Optionally export checkpoint data
-        if (checkpointName === 'vocabulary_completed' || 
-            checkpointName === 'narrative_completed' || 
-            checkpointName === 'expository_completed') {
-            this.exportCheckpointData(checkpoint);
+        try {
+            const checkpoint = {
+                name: checkpointName,
+                timestamp: new Date().toISOString(),
+                sessionData: this.getSessionSummary(),
+                testData: JSON.parse(JSON.stringify(testData)) // Deep clone to avoid circular references
+            };
+            this.currentSession.checkpoints.push(checkpoint);
+            
+            // Optionally export checkpoint data
+            if (checkpointName === 'vocabulary_completed' || 
+                checkpointName === 'narrative_completed' || 
+                checkpointName === 'expository_completed') {
+                this.exportCheckpointData(checkpoint);
+            }
+        } catch (error) {
+            console.error('Error saving checkpoint:', error);
+            // Continue without throwing - checkpoint is optional
+            this.currentSession.checkpoints.push({
+                name: checkpointName,
+                timestamp: new Date().toISOString(),
+                error: error.message
+            });
         }
     }
 
     exportCheckpointData(checkpoint) {
-        const blob = new Blob([JSON.stringify(checkpoint, null, 2)], 
-            { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `checkpoint_${checkpoint.name}_${this.currentSession.sessionId}.json`;
-        // Silent save - don't click automatically, just prepare the link
-        setTimeout(() => URL.revokeObjectURL(url), 100);
+        try {
+            // Create a clean copy without circular references
+            const cleanCheckpoint = {
+                name: checkpoint.name,
+                timestamp: checkpoint.timestamp,
+                sessionData: {
+                    sessionId: checkpoint.sessionData.sessionId,
+                    startTime: checkpoint.sessionData.startTime,
+                    endTime: checkpoint.sessionData.endTime,
+                    totalDuration: checkpoint.sessionData.totalDuration,
+                    interactionCount: checkpoint.sessionData.interactionCount,
+                    responseCount: checkpoint.sessionData.responseCount,
+                    browserInfo: checkpoint.sessionData.browserInfo,
+                    screenInfo: checkpoint.sessionData.screenInfo,
+                    // Exclude mouseMovements and other potentially large arrays
+                    interactions: checkpoint.sessionData.interactions.slice(-50), // Last 50 interactions only
+                    detailedResponses: checkpoint.sessionData.detailedResponses,
+                    checkpoints: checkpoint.sessionData.checkpoints.map(cp => ({
+                        name: cp.name,
+                        timestamp: cp.timestamp
+                    }))
+                },
+                testData: checkpoint.testData
+            };
+            
+            const blob = new Blob([JSON.stringify(cleanCheckpoint, null, 2)], 
+                { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `checkpoint_${checkpoint.name}_${this.currentSession.sessionId}.json`;
+            // Silent save - don't click automatically, just prepare the link
+            setTimeout(() => URL.revokeObjectURL(url), 100);
+        } catch (error) {
+            console.error('Error exporting checkpoint data:', error);
+            // Continue without throwing - checkpoint is optional
+        }
     }
 
     getSessionSummary() {
         return {
-            ...this.currentSession,
-            endTime: new Date(),
+            sessionId: this.currentSession.sessionId,
+            startTime: this.currentSession.startTime.toISOString(),
+            browserInfo: this.currentSession.browserInfo,
+            screenInfo: this.currentSession.screenInfo,
+            interactions: this.currentSession.interactions,
+            detailedResponses: this.currentSession.detailedResponses,
+            mouseMovements: this.currentSession.mouseMovements,
+            focusEvents: this.currentSession.focusEvents,
+            checkpoints: this.currentSession.checkpoints,
+            endTime: new Date().toISOString(),
             totalDuration: Date.now() - this.currentSession.startTime.getTime(),
             interactionCount: this.currentSession.interactions.length,
             responseCount: this.currentSession.detailedResponses.length
