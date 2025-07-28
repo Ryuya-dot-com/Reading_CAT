@@ -786,8 +786,9 @@ class VocabReadingCATTest {
                 <div class="row pt-4 fade-in">
                     <div class="col-10 offset-1">
                         <div class="text-center mb-5">
-                            <h1 class="display-4 mb-3">語彙・読解力測定システム</h1>
-                            <p class="lead text-muted">個人最適化による英語力測定</p>
+                            <h1 class="display-4 mb-3">JACET 語彙・読解力測定システム</h1>
+                            <p class="lead text-muted">個人最適化による効率的な英語力測定</p>
+                            <p class="text-info"><small>Enhanced Version 2.0 - データ収集機能付き</small></p>
                         </div>
 
                         <!-- Test Overview -->
@@ -802,6 +803,7 @@ class VocabReadingCATTest {
                                         <ul class="list-unstyled">
                                             <li><strong>語彙力:</strong> 推定語彙サイズ（0-8000語）</li>
                                             <li><strong>読解力:</strong> レベル別理解度測定</li>
+                                            <li><strong>回答時間:</strong> 詳細な時間分析</li>
                                             <li><strong class="text-info">NEW:</strong> 回答パターン分析</li>
                                         </ul>
                                     </div>
@@ -898,7 +900,7 @@ class VocabReadingCATTest {
                                             <li><i class="fas fa-info-circle text-info me-2"></i>わからない問題も必ず回答</li>
                                             <li><i class="fas fa-info-circle text-warning me-2"></i><strong>回答後の修正・戻る機能はありません</strong></li>
                                             <li><i class="fas fa-info-circle text-danger me-2"></i><strong>ブラウザの戻るボタンは使用禁止</strong></li>
-                                            <li><i class="fas fa-info-circle text-info me-2"></i>集中して最後まで取り組んでください</li>
+                                            <li><i class="fas fa-info-circle text-info me-2"></i>集中して最後まで取り組みましょう</li>
                                         </ul>
                                     </div>
                                 </div>
