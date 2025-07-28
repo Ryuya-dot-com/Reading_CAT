@@ -1,5 +1,5 @@
 /**
- * JACET Vocabulary Size CAT + Reading Comprehension Test
+ * Vocabulary Size CAT + Reading Comprehension Test
  */
 
 // Simple CSV parser function
@@ -259,12 +259,23 @@ class VocabReadingCATTest {
 
     async loadData() {
         try {
+            // GitHub Pages や他の環境でも動作するようにベースパスを取得
+            const basePath = window.location.pathname.endsWith('/') 
+                ? window.location.pathname.slice(0, -1) 
+                : window.location.pathname.replace(/\/[^\/]*$/, '');
+            
+            // CSVファイルのパスを構築
+            const vocabPath = basePath ? `${basePath}/jacet_parameters.csv` : 'jacet_parameters.csv';
+            const readingPath = basePath ? `${basePath}/reading_texts.csv` : 'reading_texts.csv';
+            
+            console.log('Loading CSV files from:', { vocabPath, readingPath });
+            
             // Load vocabulary data with retry
-            const vocabText = await this.loadDataWithRetry('./jacet_parameters.csv');
+            const vocabText = await this.loadDataWithRetry(vocabPath);
             this.vocabularyItems = parseCSV(vocabText);
 
             // Load reading texts data with retry
-            const readingText = await this.loadDataWithRetry('./reading_texts.csv');
+            const readingText = await this.loadDataWithRetry(readingPath);
             
             // Use Papa Parse for robust parsing of reading texts
             if (typeof Papa !== 'undefined') {
