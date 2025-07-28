@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+    <meta name="description" content="JACET語彙・読解力測定システム - 個人最適化による効率的な英語力測定">
+    <meta name="robots" content="noindex, nofollow">
+    
+    <!-- Security Headers -->
+    <meta http-equiv="X-Content-Type-Options" content="nosniff">
+    <meta http-equiv="X-Frame-Options" content="DENY">
+    <meta http-equiv="Referrer-Policy" content="strict-origin-when-cross-origin">
+    <meta http-equiv="Permissions-Policy" content="geolocation=(), microphone=(), camera=()">
+    
+    <title>JACET 語彙・読解力測定システム</title>
+    
+    <!-- Preconnect to CDNs for better performance -->
+    <link rel="preconnect" href="https://cdn.jsdelivr.net">
+    <link rel="preconnect" href="https://cdnjs.cloudflare.com">
+    
+    <!-- CSS Libraries (jsDelivr for Japan optimization) -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-9ndCyUaIbzAi2FUVXJi0CjmCapSmO7SnpJef0486qhLnuZ2cdeRhO02iuK6FUUVM" crossorigin="anonymous">
+    <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
+    
+    <!-- Touch device optimization -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="format-detection" content="telephone=no">
+    
+    <!-- Custom styles with touch optimization -->
+    <link rel="stylesheet" href="style.css">
+    <style>
+        /* Touch device optimizations */
+        @media (hover: none) and (pointer: coarse) {
+            .btn {
+                min-height: 44px;
+                min-width: 44px;
+            }
+            .option-btn {
+                padding: 15px 20px;
+                font-size: 1.1rem;
+            }
+        }
+        
+        /* Disable text selection during test */
+        .no-select {
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+            user-select: none;
+        }
+        
+        /* Error message styles */
+        .browser-warning {
+            background-color: #fff3cd;
+            border: 1px solid #ffeaa7;
+            border-radius: 0.375rem;
+            padding: 1rem;
+            margin: 1rem;
+        }
+        
+        .noscript-error {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #f8f9fa;
+            z-index: 9999;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            padding: 20px;
+        }
+        
+        /* Loading optimization */
+        .loading-skeleton {
+            background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+            background-size: 200% 100%;
+            animation: loading 1.5s infinite;
+        }
+        
+        @keyframes loading {
+            0% { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
+        }
+    </style>
+</head>
+<body>
+    <!-- JavaScript disabled warning -->
+    <noscript>
+        <div class="noscript-error">
+            <div class="container">
+                <div class="alert alert-danger" role="alert">
+                    <h2 class="alert-heading">
+                        <i class="fas fa-exclamation-triangle"></i> JavaScriptが無効です
+                    </h2>
+                    <p class="mb-3">このアプリケーションを使用するにはJavaScriptを有効にする必要があります。</p>
+                    <hr>
+                    <h5>JavaScriptを有効にする方法：</h5>
+                    <ul class="text-start">
+                        <li><strong>Chrome:</strong> 設定 → プライバシーとセキュリティ → サイトの設定 → JavaScript</li>
+                        <li><strong>Firefox:</strong> about:config → javascript.enabled を true に設定</li>
+                        <li><strong>Safari:</strong> 環境設定 → セキュリティ → 「JavaScriptを有効にする」をチェック</li>
+                        <li><strong>Edge:</strong> 設定 → Cookieとサイトのアクセス許可 → JavaScript</li>
+                    </ul>
+                    <p class="mt-3">設定後、ページを再読み込みしてください。</p>
+                </div>
+            </div>
+        </div>
+    </noscript>
+
+    <!-- Main application container -->
+    <div id="app" class="container">
+        <div class="loading">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <p class="mt-3">データを読み込み中...</p>
+        </div>
+    </div>
+
+    <!-- Browser compatibility check -->
+    <script>
+        // Basic browser feature detection
+        (function() {
+            var requiredFeatures = {
+                'Promise': typeof Promise !== 'undefined',
+                'Fetch API': typeof fetch !== 'undefined',
+                'Arrow Functions': (function() { try { eval('() => {}'); return true; } catch(e) { return false; } })(),
+                'ES6 Classes': (function() { try { eval('class Test {}'); return true; } catch(e) { return false; } })(),
+                'Local Storage': (function() { try { return 'localStorage' in window && window['localStorage'] !== null; } catch(e) { return false; } })()
+            };
+            
+            var unsupportedFeatures = [];
+            for (var feature in requiredFeatures) {
+                if (!requiredFeatures[feature]) {
+                    unsupportedFeatures.push(feature);
+                }
+            }
+            
+            if (unsupportedFeatures.length > 0) {
+                document.getElementById('app').innerHTML = 
+                    '<div class="browser-warning mt-5">' +
+                    '<h3><i class="fas fa-exclamation-circle text-warning"></i> ブラウザの互換性警告</h3>' +
+                    '<p>お使いのブラウザは以下の機能をサポートしていません：</p>' +
+                    '<ul>' + unsupportedFeatures.map(function(f) { return '<li>' + f + '</li>'; }).join('') + '</ul>' +
+                    '<p><strong>推奨ブラウザ：</strong></p>' +
+                    '<ul>' +
+                    '<li>Google Chrome 90以降</li>' +
+                    '<li>Mozilla Firefox 88以降</li>' +
+                    '<li>Safari 14以降</li>' +
+                    '<li>Microsoft Edge 90以降</li>' +
+                    '</ul>' +
+                    '<p>最新のブラウザにアップグレードしてください。</p>' +
+                    '</div>';
+                return;
+            }
+            
+            // Check for Internet Explorer
+            var ua = window.navigator.userAgent;
+            var msie = ua.indexOf('MSIE ');
+            var trident = ua.indexOf('Trident/');
+            
+            if (msie > 0 || trident > 0) {
+                document.getElementById('app').innerHTML = 
+                    '<div class="alert alert-danger mt-5" role="alert">' +
+                    '<h3><i class="fas fa-times-circle"></i> Internet Explorerはサポートされていません</h3>' +
+                    '<p>このアプリケーションはInternet Explorerでは動作しません。</p>' +
+                    '<p>以下のモダンブラウザをご使用ください：</p>' +
+                    '<ul>' +
+                    '<li>Google Chrome</li>' +
+                    '<li>Mozilla Firefox</li>' +
+                    '<li>Microsoft Edge</li>' +
+                    '<li>Safari</li>' +
+                    '</ul>' +
+                    '</div>';
+                return;
+            }
+        })();
+    </script>
+
+    <!-- JavaScript Libraries with Japan CDN optimization -->
+    <!-- Papa Parse for CSV parsing -->
+    <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js" 
+            integrity="sha256-j1loCnTe13bWLcSXpS7GdpnP7Zv7jNdy7C3YQKP6KQA=" 
+            crossorigin="anonymous"></script>
+    
+    <!-- SheetJS for Excel export -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" 
+            integrity="sha256-i5qcbcTU7x5vu+c6SBXsHqlhz4mOmvnehEYgR3aaKMI=" 
+            crossorigin="anonymous"></script>
+    
+    <!-- Main application script -->
+    <script src="vocab_reading_cat.js"></script>
+    
+    <!-- Error handling and monitoring -->
+    <script>
+        // Global error handler
+        window.addEventListener('error', function(event) {
+            console.error('Global error:', event.error);
+            
+            // Check if it's a critical error
+            if (event.error && event.error.stack && event.error.stack.includes('vocab_reading_cat.js')) {
+                var app = document.getElementById('app');
+                if (app && !app.querySelector('.error')) {
+                    app.innerHTML += 
+                        '<div class="alert alert-danger mt-3" role="alert">' +
+                        '<h5><i class="fas fa-exclamation-triangle"></i> エラーが発生しました</h5>' +
+                        '<p>アプリケーションの実行中にエラーが発生しました。</p>' +
+                        '<details>' +
+                        '<summary>詳細情報</summary>' +
+                        '<pre class="mt-2">' + (event.error.stack || event.error.toString()) + '</pre>' +
+                        '</details>' +
+                        '<button class="btn btn-primary mt-2" onclick="location.reload()">ページを再読み込み</button>' +
+                        '</div>';
+                }
+            }
+        });
+        
+        // Network connection monitoring
+        window.addEventListener('online', function() {
+            console.log('Network connection restored');
+        });
+        
+        window.addEventListener('offline', function() {
+            var app = document.getElementById('app');
+            if (app) {
+                var existingAlert = app.querySelector('.network-alert');
+                if (!existingAlert) {
+                    var alert = document.createElement('div');
+                    alert.className = 'alert alert-warning network-alert';
+                    alert.innerHTML = 
+                        '<i class="fas fa-wifi"></i> <strong>ネットワーク接続が失われました</strong><br>' +
+                        'インターネット接続を確認してください。';
+                    app.insertBefore(alert, app.firstChild);
+                }
+            }
+        });
+        
+        // Touch device detection and optimization
+        if ('ontouchstart' in window || navigator.maxTouchPoints > 0) {
+            document.documentElement.classList.add('touch-device');
+            
+            // Prevent double-tap zoom on buttons
+            var buttons = document.getElementsByTagName('button');
+            for (var i = 0; i < buttons.length; i++) {
+                buttons[i].addEventListener('touchstart', function(e) {
+                    e.preventDefault();
+                    this.click();
+                });
+            }
+        }
+        
+        // Performance monitoring
+        if ('performance' in window && 'measure' in window.performance) {
+            window.addEventListener('load', function() {
+                setTimeout(function() {
+                    var perfData = performance.getEntriesByType('navigation')[0];
+                    if (perfData) {
+                        console.log('Page load time:', Math.round(perfData.loadEventEnd - perfData.fetchStart), 'ms');
+                        
+                        // Warn if load time is too slow
+                        if (perfData.loadEventEnd - perfData.fetchStart > 5000) {
+                            console.warn('Page load time is slow. Consider optimizing resources.');
+                        }
+                    }
+                }, 0);
+            });
+        }
+    </script>
+</body>
+</html>
