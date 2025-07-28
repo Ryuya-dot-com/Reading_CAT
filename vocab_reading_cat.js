@@ -1,5 +1,5 @@
 /**
- * JACET Vocabulary Size CAT + Reading Comprehension Test
+ * Vocabulary Size CAT + Reading Comprehension Test
  */
 
 // Simple CSV parser function
@@ -142,10 +142,15 @@ class DataCollector {
             const checkpoint = {
                 name: checkpointName,
                 timestamp: new Date().toISOString(),
-                sessionData: this.getSessionSummary(),
-                testData: JSON.parse(JSON.stringify(testData)) // Deep clone to avoid circular references
+                // testData is already cleaned in the calling methods
+                testData: testData
             };
-            this.currentSession.checkpoints.push(checkpoint);
+            
+            // Only add minimal session data for the final JSON export
+            this.currentSession.checkpoints.push({
+                name: checkpointName,
+                timestamp: checkpoint.timestamp
+            });
             
             // Optionally export checkpoint data
             if (checkpointName === 'vocabulary_completed' || 
@@ -155,6 +160,8 @@ class DataCollector {
             }
         } catch (error) {
             console.error('Error saving checkpoint:', error);
+            console.error('Checkpoint name:', checkpointName);
+            console.error('Test data:', testData);
             // Continue without throwing - checkpoint is optional
             this.currentSession.checkpoints.push({
                 name: checkpointName,
@@ -166,40 +173,37 @@ class DataCollector {
 
     exportCheckpointData(checkpoint) {
         try {
-            // Create a clean copy without circular references
-            const cleanCheckpoint = {
+            // Create a safe copy for JSON serialization
+            const safeCheckpoint = {
                 name: checkpoint.name,
                 timestamp: checkpoint.timestamp,
-                sessionData: {
-                    sessionId: checkpoint.sessionData.sessionId,
-                    startTime: checkpoint.sessionData.startTime,
-                    endTime: checkpoint.sessionData.endTime,
-                    totalDuration: checkpoint.sessionData.totalDuration,
-                    interactionCount: checkpoint.sessionData.interactionCount,
-                    responseCount: checkpoint.sessionData.responseCount,
-                    browserInfo: checkpoint.sessionData.browserInfo,
-                    screenInfo: checkpoint.sessionData.screenInfo,
-                    // Exclude mouseMovements and other potentially large arrays
-                    interactions: checkpoint.sessionData.interactions.slice(-50), // Last 50 interactions only
-                    detailedResponses: checkpoint.sessionData.detailedResponses,
-                    checkpoints: checkpoint.sessionData.checkpoints.map(cp => ({
-                        name: cp.name,
-                        timestamp: cp.timestamp
-                    }))
-                },
-                testData: checkpoint.testData
+                testData: checkpoint.testData // This is already cleaned in saveCheckpoint
             };
             
-            const blob = new Blob([JSON.stringify(cleanCheckpoint, null, 2)], 
-                { type: 'application/json' });
+            // Add minimal session data
+            if (checkpoint.sessionData) {
+                safeCheckpoint.sessionData = {
+                    sessionId: checkpoint.sessionData.sessionId,
+                    startTime: checkpoint.sessionData.startTime,
+                    totalDuration: checkpoint.sessionData.totalDuration,
+                    interactionCount: checkpoint.sessionData.interactionCount,
+                    responseCount: checkpoint.sessionData.responseCount
+                };
+            }
+            
+            const jsonString = JSON.stringify(safeCheckpoint, null, 2);
+            const blob = new Blob([jsonString], { type: 'application/json' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
             a.download = `checkpoint_${checkpoint.name}_${this.currentSession.sessionId}.json`;
             // Silent save - don't click automatically, just prepare the link
             setTimeout(() => URL.revokeObjectURL(url), 100);
+            
+            console.log(`Checkpoint ${checkpoint.name} prepared for export`);
         } catch (error) {
             console.error('Error exporting checkpoint data:', error);
+            console.error('Checkpoint data:', checkpoint);
             // Continue without throwing - checkpoint is optional
         }
     }
@@ -608,8 +612,23 @@ class VocabReadingCATTest {
             theta: this.theta,
             se: this.se,
             vocabSize: vocabSize,
-            responses: this.responseDetails,
-            administeredItems: this.administeredItems
+            // Only save essential data to avoid circular references
+            responses: this.responseDetails.map(detail => ({
+                itemIndex: detail.itemIndex,
+                item: detail.item,
+                level: detail.level,
+                partOfSpeech: detail.partOfSpeech,
+                correctAnswer: detail.correctAnswer,
+                selectedAnswer: detail.selectedAnswer,
+                correct: detail.correct,
+                responseTime: detail.responseTime,
+                abilityBeforeResponse: detail.abilityBeforeResponse,
+                seBeforeResponse: detail.seBeforeResponse,
+                timestamp: detail.timestamp
+            })),
+            administeredItems: [...this.administeredItems], // Create a copy
+            totalItems: this.administeredItems.length,
+            correctItems: this.responses.filter(r => r === 1).length
         });
     }
 
@@ -651,8 +670,17 @@ class VocabReadingCATTest {
                 // Save checkpoint for narrative completion
                 this.dataCollector.saveCheckpoint('narrative_completed', {
                     readingLevel: this.readingLevel,
-                    narrativeAnswers: this.readingAnswers.narrative,
-                    narrativeTimes: this.readingTimes.narrative
+                    narrativeAnswers: {
+                        question1: this.readingAnswers.narrative.question1,
+                        question2: this.readingAnswers.narrative.question2
+                    },
+                    narrativeTimes: {
+                        textStart: this.readingTimes.narrative.textStart ? this.readingTimes.narrative.textStart.toISOString() : null,
+                        question1Start: this.readingTimes.narrative.question1Start ? this.readingTimes.narrative.question1Start.toISOString() : null,
+                        question1End: this.readingTimes.narrative.question1End ? this.readingTimes.narrative.question1End.toISOString() : null,
+                        question2Start: this.readingTimes.narrative.question2Start ? this.readingTimes.narrative.question2Start.toISOString() : null,
+                        question2End: this.readingTimes.narrative.question2End ? this.readingTimes.narrative.question2End.toISOString() : null
+                    }
                 });
                 
                 // Move to expository
@@ -664,8 +692,32 @@ class VocabReadingCATTest {
                 // Save checkpoint for expository completion
                 this.dataCollector.saveCheckpoint('expository_completed', {
                     readingLevel: this.readingLevel,
-                    allAnswers: this.readingAnswers,
-                    allTimes: this.readingTimes
+                    allAnswers: {
+                        narrative: {
+                            question1: this.readingAnswers.narrative.question1,
+                            question2: this.readingAnswers.narrative.question2
+                        },
+                        expository: {
+                            question1: this.readingAnswers.expository.question1,
+                            question2: this.readingAnswers.expository.question2
+                        }
+                    },
+                    allTimes: {
+                        narrative: {
+                            textStart: this.readingTimes.narrative.textStart ? this.readingTimes.narrative.textStart.toISOString() : null,
+                            question1Start: this.readingTimes.narrative.question1Start ? this.readingTimes.narrative.question1Start.toISOString() : null,
+                            question1End: this.readingTimes.narrative.question1End ? this.readingTimes.narrative.question1End.toISOString() : null,
+                            question2Start: this.readingTimes.narrative.question2Start ? this.readingTimes.narrative.question2Start.toISOString() : null,
+                            question2End: this.readingTimes.narrative.question2End ? this.readingTimes.narrative.question2End.toISOString() : null
+                        },
+                        expository: {
+                            textStart: this.readingTimes.expository.textStart ? this.readingTimes.expository.textStart.toISOString() : null,
+                            question1Start: this.readingTimes.expository.question1Start ? this.readingTimes.expository.question1Start.toISOString() : null,
+                            question1End: this.readingTimes.expository.question1End ? this.readingTimes.expository.question1End.toISOString() : null,
+                            question2Start: this.readingTimes.expository.question2Start ? this.readingTimes.expository.question2Start.toISOString() : null,
+                            question2End: this.readingTimes.expository.question2End ? this.readingTimes.expository.question2End.toISOString() : null
+                        }
+                    }
                 });
                 
                 // All completed
@@ -947,7 +999,7 @@ class VocabReadingCATTest {
                                             <li><i class="fas fa-info-circle text-info me-2"></i>わからない問題も必ず回答</li>
                                             <li><i class="fas fa-info-circle text-warning me-2"></i><strong>回答後の修正・戻る機能はありません</strong></li>
                                             <li><i class="fas fa-info-circle text-danger me-2"></i><strong>ブラウザの戻るボタンは使用禁止</strong></li>
-                                            <li><i class="fas fa-info-circle text-info me-2"></i>集中して最後まで取り組みましょう</li>
+                                            <li><i class="fas fa-info-circle text-info me-2"></i>集中して最後まで完走</li>
                                         </ul>
                                     </div>
                                 </div>
