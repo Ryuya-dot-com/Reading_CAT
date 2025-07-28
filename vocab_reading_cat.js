@@ -1,8 +1,5 @@
 /**
  * JACET Vocabulary Size CAT + Reading Comprehension Test
- * Enhanced Version with Data Collection & Analysis Features
- * Author: JACET Vocabulary Research Team (Enhanced JS version)
- * License: MIT
  */
 
 // Simple CSV parser function
@@ -280,7 +277,8 @@ class VocabReadingCATTest {
                 });
                 this.readingTexts = parsed.data.map(row => ({
                     ...row,
-                    // More aggressive quote cleaning
+                    // levelを確実に数値に変換
+                    level: parseInt(row.level, 10),
                     text: row.text ? this.cleanText(row.text) : '',
                     question1: row.question1 ? this.cleanText(row.question1) : '',
                     question2: row.question2 ? this.cleanText(row.question2) : ''
@@ -411,9 +409,22 @@ class VocabReadingCATTest {
 
     // Get reading text by level and type
     getReadingText(level, type) {
-        return this.readingTexts.find(text => 
+        const text = this.readingTexts.find(text => 
             text.level === level && text.type === type
         );
+        
+        if (!text) {
+            console.error(`Reading text not found for level ${level} and type ${type}`);
+            console.log('Available texts:', this.readingTexts.map(t => ({level: t.level, type: t.type})));
+            // フォールバック：最も近いレベルのテキストを返す
+            const fallback = this.readingTexts.find(text => text.type === type);
+            if (fallback) {
+                console.warn(`Using fallback text at level ${fallback.level}`);
+                return fallback;
+            }
+        }
+        
+        return text;
     }
 
     selectInitialItem() {
@@ -1002,7 +1013,7 @@ class VocabReadingCATTest {
                                             <li><i class="fas fa-info-circle text-info me-2"></i>わからない問題も必ず回答</li>
                                             <li><i class="fas fa-info-circle text-warning me-2"></i><strong>回答後の修正・戻る機能はありません</strong></li>
                                             <li><i class="fas fa-info-circle text-danger me-2"></i><strong>ブラウザの戻るボタンは使用禁止</strong></li>
-                                            <li><i class="fas fa-info-circle text-info me-2"></i>集中して最後まで完走</li>
+                                            <li><i class="fas fa-info-circle text-info me-2"></i>集中して最後まで取り組みましょう</li>
                                         </ul>
                                     </div>
                                 </div>
@@ -1138,6 +1149,12 @@ class VocabReadingCATTest {
     }
 
     renderReadingPhase() {
+        if (!this.currentReadingText) {
+            console.error('No reading text available');
+            this.showError(new Error('読解テキストが見つかりません'));
+            return;
+        }
+        
         const app = document.getElementById('app');
         const currentType = this.phase.replace('reading_', '');
         const typeLabel = currentType === 'narrative' ? '物語文' : '説明文';
